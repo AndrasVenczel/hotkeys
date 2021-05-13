@@ -1,0 +1,2 @@
+# hotkeys
+Auto window positioning
