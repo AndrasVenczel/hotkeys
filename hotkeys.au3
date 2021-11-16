@@ -28,7 +28,7 @@ HotKeySet("#^!s", "HotKeyPressed")	;Save windows positions
 HotKeySet("#^!r", "HotKeyPressed")	;Restore windows positions
 HotKeySet("#^t", "HotKeyPressed")	;Set topmost
 HotKeySet("#^!t", "HotKeyPressed")	;Keep window activated
-HotKeySet("#i", "HotKeyPressed")	;Dump windows info to log file
+HotKeySet("#g", "HotKeyPressed")	;Dump windows info to log file
 HotKeySet("#c", "HotKeyPressed")	;Close active window
 HotKeySet("#^!c", "HotKeyPressed")	;Close all visible windows of the active window's class
 HotKeySet("#^!m", "HotKeyPressed")	;Maximize all visible windows of the active window's class
@@ -69,7 +69,9 @@ HotKeySet("^!{UP}", "HotKeyPressed")		 ;Arrange windows in tile layout on the mo
 HotKeySet("^!{DOWN}", "HotKeyPressed")		 ;Arrange windows in tile layout on the monitor of the active windows. decrease number of lines
 HotKeySet("^!{SPACE}", "HotKeyPressed")		 ;Center window around mouse
 HotKeySet("#v", "HotKeyPressed")		 	;Tile vertical on active monitor
+HotKeySet("#^!v", "HotKeyPressed")		 	;Tile vertical only the active windows's class windows on active monitor
 HotKeySet("#h", "HotKeyPressed")		 	;Tile horizontal on active monitor
+HotKeySet("#^!h", "HotKeyPressed")		 	;Tile horizontal only the active windows's class windows on active monitor
 HotKeySet("#^v", "HotKeyPressed")		 	;Tile vertical decrease master area
 HotKeySet("#!v", "HotKeyPressed")		 	;Tile vertical increase master area
 HotKeySet("#+v", "HotKeyPressed")			;Toggle window as master
@@ -78,15 +80,16 @@ HotKeySet("#!h", "HotKeyPressed")		 	;Tile horizontal increase master area
 HotKeySet("#+h", "HotKeyPressed")			;Toggle window as master
 HotKeySet("#;", "HotKeyPressed")			;Toggle repeat last command
 HotKeySet("#{SPACE}", "HotKeyPressed")		;Toggle repeat last command
-HotKeySet("+{SPACE}", "HotKeyPressed")		 ;Toggle new window follow mouse
+HotKeySet("+{SPACE}", "HotKeyPressed")		;Toggle new window follow mouse
 HotKeySet("#^o", "HotKeyPressed")		 	;Tile best on active monitor
 HotKeySet("#y", "HotKeyPressed")		 	;Execute script
 HotKeySet("#^y", "HotKeyPressed")		 	;Edit script
 HotKeySet("#^!y", "HotKeyPressed")		 	;Stop script
-HotKeySet("#{TAB}", "HotKeyPressed")		;Next window only on this monitor
-HotKeySet("#e", "HotKeyPressed")		;Move window to next monitor
+HotKeySet("#{TAB}", "HotKeyPressed")		;Switch to next window only on active monitor
+HotKeySet("#e", "HotKeyPressed")			;Move window to next monitor
 HotKeySet("#{LEFT}", "HotKeyPressed")		;Move window to previous monitor
-
+HotKeySet("#w", "HotKeyPressed")			;Play previous hotkey
+HotKeySet("#i", "HotKeyPressed")			;Ignore active window
 
 $logfile=FileOpen("log.txt", $FO_OVERWRITE)
 
@@ -107,7 +110,7 @@ Global $Timer4=0	;Arrange vertical timer
 Global $Timer4Max=7
 Global $Timer5=0	;Repeat commands timer
 Global $Timer5Max=1
-Global $LastCmdRepeat=False
+Global $LastCmdRepeat=True
 Global $LastCmd=0
 
 Global $MoveStep=1
@@ -122,7 +125,11 @@ Global $MasterWindows[0]	;Array of handle of windows that should be placed into 
 Global $NewWindowFollowMouse=True
 Global $bKeepWindowActive = False
 Global $hKeepWindowActive
-
+Global $winmaxlasthandle
+Global $semaphore1 = False
+Global $semaphore2 = False
+Global $savedkeys[2]
+Global $RestoreLastCmdRepeat = False
 ;Variables to move mouse periodically if not moved for $MouseMovePeriod
 Global $MouseSavedX
 Global $MouseSavedY
@@ -135,6 +142,7 @@ Global $SriptPID
 $topmostlist[0][0]=0
 ReadIgnore()
 GetWindowList()
+dispatchhotkey("#^o")
 
 While True
 	  Sleep(500)
@@ -228,10 +236,85 @@ FileWriteLine($logfile, "Func LogWisibleWindows: ")
    Next
 EndFunc
 
+Func Prevhotkeyenable($key)
+	Local $r = False
+	Switch $key
+		Case "#m"
+			$r = True
+		Case "#^!m"
+			$r = True
+		Case "#^!a"
+			$r = True
+		Case "#^m"
+			$r = True
+		Case "#^x"
+			$r = True
+		Case "#x"
+			$r = True
+		Case "^!{RIGHT}"
+			$r = True
+		Case "^!{LEFT}"
+			$r = True
+		Case "^!{UP}"
+			$r = True
+		Case "^!{DOWN}"
+			$r = True
+		Case "#b"
+			$r = True
+		Case "#^!b"
+			$r = True
+		Case "#v"
+			$r = True
+		Case "#h"
+			$r = True
+		Case "#^v"
+			$r = True
+		Case "#!v"
+			$r = True
+		Case "#+v"
+			$r = True
+		Case "#^h"
+			$r = True
+		Case "#!h"
+			$r = True
+		Case "#+h"
+			$r = True
+		Case "#^o"
+			$r = True
+	EndSwitch
+	;ConsoleWrite("$r="  &$r &  @CRLF)
+	Return $r
+EndFunc
+
 Func HotKeyPressed()
    ;ConsoleWrite("Hotkey: " & @HotKeyPressed & @CRLF)
+   if not $semaphore2 Then
+		$semaphore2 = True
+	   Local $t = @HotKeyPressed
+
+	if Prevhotkeyenable($t) and $t <> $savedkeys[0] Then
+		$savedkeys[1] = $savedkeys[0]
+		$savedkeys[0] = $t
+	EndIf
+		if $t = "#w" Then
+			dispatchhotkey($savedkeys[1])
+			Local $tt
+			$tt = $savedkeys[0]
+			$savedkeys[0] = $savedkeys[1]
+			$savedkeys[1] = $tt
+		Else
+			dispatchhotkey($t)
+		EndIf
+	EndIf
+	$semaphore2 = False
+;	ConsoleWrite("$savedkeys[0]="  &$savedkeys[0] &  @CRLF)
+;	ConsoleWrite("$savedkeys[1]="  &$savedkeys[1] &  @CRLF)
+EndFunc
+
+Func dispatchhotkey($hk)
+	;ConsoleWrite("dispatchhotkey(" &$hk&")" & @CRLF)
    GetWindowList()
-   Switch @HotKeyPressed
+   Switch $hk
 	  Case "#s"
 		 ActivateNextWindow()
 	  Case "#a"
@@ -250,7 +333,7 @@ Func HotKeyPressed()
 		 WinRestoreState()
 	  Case "#^t"
 		 WinToggleTopMost()
-	  Case "#i"
+	  Case "#g"
 		 LogWin()
 	  Case "#c"
 		 WinCloseActive()
@@ -340,6 +423,10 @@ Func HotKeyPressed()
 		$LastCmd = 2
 		$Timer5 = 0
 		WinTileVertHoriz(True)
+	Case "#^!v"
+		WinTileVertHorizClass(True)
+	Case "#^!h"
+		WinTileVertHorizClass(False)
 	Case "#h"
 		$LastCmd = 3
 		$Timer5 = 0
@@ -391,11 +478,10 @@ Func HotKeyPressed()
 		MoveWindowToNextMonitor()
 	case "#{LEFT}"
 		MoveWindowToPrevMonitor()
-
-
+	case "#i":
+		IgnoreWindow()
    EndSwitch
 EndFunc
-
 
 
 Func NewWindowFollowMouseFunc()
@@ -764,9 +850,20 @@ Func WinToggleCaptionVisible()
 EndFunc
 
 Func WinMaximizeActive()
-   $LastCmdRepeat=False
+   ;ConsoleWrite("WinMaximizeActive()" & @CRLF)
    Local $h=$activewinhandle
    Local $s = WinGetState($h)
+
+	if 	$RestoreLastCmdRepeat and ($h = $winmaxlasthandle) and BitAND($s, $WIN_STATE_MAXIMIZED) Then
+		$LastCmdRepeat=True
+		$RestoreLastCmdRepeat=False
+	else
+		if $LastCmdRepeat and (not  BitAND($s, $WIN_STATE_MAXIMIZED)) Then
+			$LastCmdRepeat=False
+			$RestoreLastCmdRepeat=True
+			$winmaxlasthandle = $h
+		EndIf
+	EndIf
    if BitAND($s, $WIN_STATE_MAXIMIZED) Then
 	  WinSetState($h, "", @SW_RESTORE)
    Else
@@ -877,33 +974,41 @@ EndFunc
 
 
 Func ScanVisibleWindows()
-	$Timer2 = 0
-	;ConsoleWrite("ScanVisibleWindows()" & @CRLF)
-	;ConsoleWrite("Wincount: " & $wincount & @CRLF)
+	If not $semaphore1 Then
+		$semaphore1=True
+		$Timer2 = 0
+		;ConsoleWrite("ScanVisibleWindows()" & @CRLF)
+		;ConsoleWrite("Wincount: " & $wincount & @CRLF)
 
-	_ArrayDelete($VisibleWindows, "0-" & String(UBound($VisibleWindows)-1))
-	for $i = 1 to $wincount
- 		Local $title=$winlist[$i][0]
-		Local $h=$winlist[$i][1]
-		Local $s=WinGetState($h)
+		_ArrayDelete($VisibleWindows, "0-" & String(UBound($VisibleWindows)-1))
+		Local $i=0
+		for $i = 1 to $wincount
+			Local $title=$winlist[$i][0]
+			Local $h=$winlist[$i][1]
+			Local $s=WinGetState($h)
 
-		if BitAND($s, $WIN_STATE_VISIBLE) And $title<>""  Then
-		   _ArrayAdd($VisibleWindows, $h)
-		EndIf
-	Next
+			if BitAND($s, $WIN_STATE_VISIBLE) And $title<>""  Then
+			   _ArrayAdd($VisibleWindows, $h)
+			EndIf
+		Next
 
-	;Remove not existing and ignored windows
-	;ConsoleWrite("Ubound: " & UBound($VisibleWindows)-1 & @CRLF)
-	Local $wins[0]
-
-	for $i=0 to UBound($VisibleWindows)-1
-		Local $h = $VisibleWindows[$i]
-		if WinExists($h) and (not IsIgnored($h)) Then
-		   _ArrayAdd($wins, $h)
-		EndIf
-	Next
-	$VisibleWindows = $wins
-	_ArraySort($VisibleWindows)
+		;Remove not existing and ignored windows
+		;ConsoleWrite("Ubound: " & UBound($VisibleWindows)-1 & @CRLF)
+		Local $wins[0]
+		Local $to = UBound($VisibleWindows)-1
+		for $i=0 to $to
+			if $i < UBound($VisibleWindows) Then
+				;ConsoleWrite("Ubound: " & UBound($VisibleWindows) & " $i=" & $i & " $to=" & $to & @CRLF)
+				Local $h = $VisibleWindows[$i]
+				if WinExists($h) and (not IsIgnored($h)) Then
+				   _ArrayAdd($wins, $h)
+			   EndIf
+			EndIf
+		Next
+		$VisibleWindows = $wins
+		_ArraySort($VisibleWindows)
+	EndIf
+	$semaphore1=False
 EndFunc
 
 
@@ -1039,7 +1144,8 @@ Func DisplayHelp()
 	$s = $s & "Win+Ctrl+Alt+r	-	Restore windows positions" & @CRLF
 	$s = $s & "Win+Ctrl+t	-	Set topmost for active window" & @CRLF
 	$s = $s & "Win+Ctrl+Alt+t	-	Keep window activated" & @CRLF
-	$s = $s & "Win+i		-	Dump windows info to log file" & @CRLF
+	$s = $s & "Win+g		-	Dump windows info to log file" & @CRLF
+	$s = $s & "Win+i		-	Ignore this window" & @CRLF
 	$s = $s & "Win+c		-	Close active window" & @CRLF
 	$s = $s & "Win+Ctrl+Alt+c	-	Close all visible windows of the active window's class" & @CRLF
 	$s = $s & "Win+Ctrl+Alt+m	-	Maximize all visible windows of the active window's class" & @CRLF
@@ -1084,9 +1190,11 @@ Func DisplayHelp()
 	$s = $s & "Win+Ctrl+V	-	Tile vertical decrease master area" & @CRLF
 	$s = $s & "Win+Alt+V	-	Tile vertical increase master area" & @CRLF
 	$s = $s & "Win+Shift+V	-	Toggle window as master" & @CRLF
+	$s = $s & "Win+Ctrl+Alt+V		-	Tile vertical only the active windows's class windows on active monitor" & @CRLF
 	$s = $s & "Win+Ctrl+H	-	Tile horizontal decrease master area" & @CRLF
 	$s = $s & "Win+Alt+H	-	Tile horizontal increase master area" & @CRLF
 	$s = $s & "Win+Shift+H	-	Toggle window as master" & @CRLF
+	$s = $s & "Win+Ctrl+Alt+H		-		Tile horizontal only the active windows's class windows on active monitor" & @CRLF
 	$s = $s & "Win+;	-	Periodically repeat last command" & @CRLF
 	$s = $s & "Win+Y	-	Execute script" & @CRLF
 	$s = $s & "Win+Ctrl+Y	-	Edit script" & @CRLF
@@ -1328,7 +1436,7 @@ EndFunc
 Func IsIgnored($h)
    Local $Title = WinGetTitle($h)
    for $i=0 To UBound($IgnoreWindowTitles)-1
-	   if StringRegExp($Title, $IgnoreWindowTitles[$i]) Then
+	   if StringRegExp($Title, $IgnoreWindowTitles[$i]) or $IgnoreWindowTitles[$i] = $Title Then
 		  Return True
 	  EndIf
 	Next
@@ -1416,7 +1524,7 @@ EndFunc
 
 
 Func WinTileVertHoriz($vert)
-   ScanVisibleWindows()
+	ScanVisibleWindows()
 	Local $monitor=_WinAPI_MonitorFromWindow($activewinhandle, $MONITOR_DEFAULTTONEAREST)
 	Local $monitorinfo = _WinAPI_GetMonitorInfo($monitor)
 	If not IsArray($monitorinfo) Then
@@ -1441,6 +1549,94 @@ Func WinTileVertHoriz($vert)
 		if $wm = $monitor Then
 				;;ConsoleWrite($title & @CRLF)
 		 _ArrayAdd($windows, $h)
+		 EndIf
+	Next
+
+	Local $NumberOfWindows = UBound($windows)-1
+	;ConsoleWrite("Number of windows: " & $NumberOfWindows & @CRLF)
+	;ConsoleWrite("Collumns: " & $TileCollumns & @CRLF)
+	;ConsoleWrite("Rows: " & $TileRows & @CRLF)
+
+	Local $WinSizeX
+	Local $WinSizeY
+
+	if $vert Then
+		$WinSizeX = Floor($MonitorSizeX/($NumberOfWindows+1))
+		$WinSizeY = Floor($MonitorSizeY)
+	Else
+		$WinSizeX = Floor($MonitorSizeX)
+		$WinSizeY = Floor($MonitorSizeY/($NumberOfWindows+1))
+	EndIf
+	;ConsoleWrite("$WinSizeX: " & $WinSizeX & @CRLF)
+	;ConsoleWrite("$WinSizeY: " & $WinSizeY & @CRLF)
+
+	Local $WinPosX = $MonitorX0
+	Local $WinPosY = $MonitorY0
+
+	For $i = 0 To $NumberOfWindows
+		Local $h = $windows[$i]
+		Local $s=WinGetState($h)
+		if BitAND($s, $WIN_STATE_MAXIMIZED) Then
+			WinSetState($h, "", @SW_RESTORE)
+		EndIf
+		Local $style = _WinAPI_GetWindowLong($h, $GWL_STYLE)
+
+		;Local $ss = BitNOT(BitOR($WS_CAPTION, $WS_THICKFRAME, $WS_MINIMIZEBOX, $WS_MAXIMIZEBOX, $WS_SYSMENU))
+		Local $ss = BitNOT(BitOR($WS_THICKFRAME, 0))
+
+		$style = BitAND($style, $ss)
+
+		_WinAPI_SetWindowLong($h, $GWL_STYLE , $style)
+		WinMove($windows[$i], "", $WinPosX, $WinPosY, $WinSizeX, $WinSizeY)
+		;ConsoleWrite("$WinPosX: " & $WinPosX & @CRLF)
+		;ConsoleWrite("$WinPosY: " & $WinPosY & @CRLF)
+		$WinPosX = $WinPosX + $WinSizeX
+		if $WinPosX >= $MonitorSizeX + $MonitorX0 Then
+			$WinPosX = $MonitorX0
+			$WinPosY = $WinPosY + $WinSizeY
+			if $WinPosY >= $MonitorSizeY + $MonitorY0 Then
+				$WinPosY = $MonitorY0
+			EndIf
+		EndIf
+	Next
+ EndFunc
+
+Func WinTileVertHorizClass($vert)
+	ScanVisibleWindows()
+	Local $monitor=_WinAPI_MonitorFromWindow($activewinhandle, $MONITOR_DEFAULTTONEAREST)
+	Local $monitorinfo = _WinAPI_GetMonitorInfo($monitor)
+	If not IsArray($monitorinfo) Then
+		Return
+	EndIf
+
+	Local $MonitorX0 = DllStructGetData($monitorinfo[1], 1)
+	Local $MonitorY0 = DllStructGetData($monitorinfo[1], 2)
+
+	Local $MonitorSizeX=DllStructGetData($monitorinfo[1], 3)-$MonitorX0
+	Local $MonitorSizeY=DllStructGetData($monitorinfo[1], 4)-$MonitorY0
+
+	;ConsoleWrite('$MonitorSizeX: ' & $MonitorSizeX & @CRLF)
+	;ConsoleWrite('$MonitorSizeY: ' & $MonitorSizeY & @CRLF)
+
+	Local $windows[0]
+	Local $c=_WinAPI_GetClassName($activewinhandle)
+	Local $rgxp=FindClassRegexp($c)
+	For $i = 0 To UBound($VisibleWindows)-1
+		Local $h=$VisibleWindows[$i]
+		Local $title=WinGetTitle($h)
+		Local $s=WinGetState($h)
+		Local $cc=_WinAPI_GetClassName($h)
+		Local $wm = _WinAPI_MonitorFromWindow($h, $MONITOR_DEFAULTTONEAREST)
+		Local $match=0
+		if $rgxp<>"" Then
+			If StringRegExp($cc, $rgxp) Then
+				$match=1
+			EndIf
+		EndIf
+
+		if $wm = $monitor and ($cc=$c or $match>0) Then
+				;;ConsoleWrite($title & @CRLF)
+			_ArrayAdd($windows, $h)
 		 EndIf
 	Next
 
@@ -2114,3 +2310,15 @@ Func MoveWindowToPrevMonitor()
 
 EndFunc
 
+Func IgnoreWindow()
+	;ConsoleWrite("IgnoreWindow()" & @CRLF)
+	ScanVisibleWindows()
+	Local $title = WinGetTitle($activewinhandle)
+	Local $i = _ArrayBinarySearch($IgnoreWindowTitles, $title)
+	if $i>-1 then
+		_ArrayDelete($IgnoreWindowTitles, $i)
+	Else
+		_ArrayAdd($IgnoreWindowTitles, $title)
+		_ArraySort($IgnoreWindowTitles)
+	EndIf
+EndFunc
