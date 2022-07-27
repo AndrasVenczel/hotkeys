@@ -1,3 +1,4 @@
+;V1.0
 #RequireAdmin
 
 #include <FileConstants.au3>
@@ -90,6 +91,7 @@ HotKeySet("#e", "HotKeyPressed")			;Move window to next monitor
 HotKeySet("#{LEFT}", "HotKeyPressed")		;Move window to previous monitor
 HotKeySet("#w", "HotKeyPressed")			;Play previous hotkey
 HotKeySet("#i", "HotKeyPressed")			;Ignore active window
+HotKeySet("#{ESC}", "HotKeyPressed")		;Tile in all monitors
 
 $logfile=FileOpen("log.txt", $FO_OVERWRITE)
 
@@ -134,6 +136,13 @@ Global $RestoreLastCmdRepeat = False
 Global $MouseSavedX
 Global $MouseSavedY
 
+Global $MouseX
+Global $MouseY
+Global $MouseLastWindow
+Global $MouseGestureActive
+Global $MouseGestureTimeout=5
+Global $MouseGestureTime=0
+
 ;Array of monitors that are part of the desktop
 Global $monitors[0][0]
 
@@ -143,9 +152,10 @@ $topmostlist[0][0]=0
 ReadIgnore()
 GetWindowList()
 dispatchhotkey("#^o")
+LogWisibleWindows()
 
 While True
-	  Sleep(500)
+	  Sleep(250)
 	  Periodic()
 Wend
 
@@ -259,10 +269,10 @@ Func Prevhotkeyenable($key)
 			$r = True
 		Case "^!{DOWN}"
 			$r = True
-		Case "#b"
-			$r = True
-		Case "#^!b"
-			$r = True
+		;Case "#b"
+		;	$r = True
+		;Case "#^!b"
+		;	$r = True
 		Case "#v"
 			$r = True
 		Case "#h"
@@ -480,6 +490,8 @@ Func dispatchhotkey($hk)
 		MoveWindowToPrevMonitor()
 	case "#i":
 		IgnoreWindow()
+	case "#{ESC}"
+		TileAllMonitors()
    EndSwitch
 EndFunc
 
@@ -908,6 +920,7 @@ Func WinMoveDown()
 EndFunc
 
 Func Periodic()
+	$activewinhandle=WinGetHandle("")
 	$cycle = $cycle + 1
 	;Timer1
 	if $Timer1 >= 1 Then
@@ -941,7 +954,30 @@ Func Periodic()
 		SendLastCmd()
 	EndIf
 
-	MouseGetPos()
+	Local $mp = MouseGetPos()
+	$MouseX=$mp[0]
+	$MouseY=$mp[1]
+
+	if $MouseGestureActive Then
+		if $MouseLastWindow<>$activewinhandle Then
+			WinMaximizeActive()
+			$MouseGestureActive=False
+			$MouseLastWindow=$activewinhandle
+		EndIf
+		$MouseGestureTime+=1
+		if $MouseGestureTime>$MouseGestureTimeout Then
+			$MouseGestureActive=False
+			$MouseGestureTime=0
+			$MouseLastWindow=$activewinhandle
+		EndIf
+	Else
+		$MouseGestureTime=0
+	EndIf
+
+	if $MouseX=0 And $MouseY=0 and (not $MouseGestureActive) Then
+		TileAllMonitors()
+	EndIf
+
 
 	;New window
 	if $NewWindowFollowMouse Then
@@ -2321,4 +2357,47 @@ Func IgnoreWindow()
 		_ArrayAdd($IgnoreWindowTitles, $title)
 		_ArraySort($IgnoreWindowTitles)
 	EndIf
+EndFunc
+
+;Return array of windows belonging to different monitors
+Func WinArrayDiffMonitors()
+;	ConsoleWrite("WinArrayDiffMonitors()" & @CRLF)
+	ScanVisibleWindows()
+	Local $monitor=_WinAPI_MonitorFromWindow($activewinhandle, $MONITOR_DEFAULTTONEAREST)
+	Local $monitorinfo = _WinAPI_GetMonitorInfo($monitor)
+	If not IsArray($monitorinfo) Then
+		Return
+	EndIf
+
+	Local $windows[0]
+	Local $monitors[0]
+
+	_ArrayAdd($windows, $activewinhandle)
+	_ArrayAdd($monitors, $monitor)
+
+	For $i = 0 To UBound($VisibleWindows)-1
+		Local $h=$VisibleWindows[$i]
+		Local $title=WinGetTitle($h)
+		Local $s=WinGetState($h)
+		Local $wm = _WinAPI_MonitorFromWindow($h, $MONITOR_DEFAULTTONEAREST)
+		if _ArraySearch($monitors, $wm) = -1 then
+			_ArrayAdd($windows, $h)
+			_ArrayAdd($monitors, $wm)
+;			ConsoleWrite("Adding " & $title & @CRLF)
+		 EndIf
+	 Next
+	 Return $windows
+ EndFunc
+
+Func TileAllMonitors()
+ 		Local $wins = WinArrayDiffMonitors()
+		Local $i
+		for $i=0 To UBound($wins)-1
+			WinActivate($wins[$i])
+			$activewinhandle = $wins[$i]
+			TileAll()
+		Next
+		$MouseLastWindow=$wins[0]
+		$MouseGestureActive=True
+		WinActivate($MouseLastWindow)
 EndFunc
